@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-DOCTOR Medical Image Analyzer</title>
+
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        body { background: #1a1f2b; }
+        .card { background: #232b3b; border-radius: 14px; }
+    </style>
+</head>
+
+<body class="text-gray-200">
+
+    <!-- HEADER -->
+    <div class="text-center py-8">
+        <h1 class="text-4xl font-bold text-purple-400">🩺 AI-DOCTOR Medical Image Analyzer</h1>
+        <p class="text-gray-400 mt-2">Upload medical images and get AI-powered analysis</p>
+        <div id="backendStatus" class="mt-4 mx-auto max-w-xl p-3 rounded-lg text-sm font-medium hidden">
+            <span id="backendStatusText"></span>
+        </div>
+    </div>
+
+    <!-- MAIN SECTION -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 px-10">
+
+        <!-- UPLOAD IMAGE -->
+        <div class="card p-6 shadow-lg">
+            <h2 class="text-2xl font-semibold mb-4">📤 Upload Medical Image</h2>
+
+            <label class="block cursor-pointer">
+                <div class="w-full bg-purple-500 hover:bg-purple-600 text-white text-center py-4 rounded-lg">
+                    📸 Click to Upload Image
+                </div>
+                <input id="imageInput" type="file" class="hidden" accept="image/*">
+            </label>
+
+            <p class="text-gray-400 text-sm mt-3">Supported: JPG, PNG, GIF</p>
+
+            <!-- IMAGE PREVIEW -->
+            <img id="preview" class="mt-4 rounded-lg hidden max-w-full h-auto" />
+        </div>
+
+        <!-- ASK QUESTION -->
+        <div class="card p-6 shadow-lg">
+            <h2 class="text-2xl font-semibold mb-4">💬 Ask Medical Question</h2>
+
+            <textarea id="question"
+                class="w-full p-4 rounded-lg bg-gray-800 border border-gray-700 h-32"
+                placeholder="Example: What abnormalities do you see?">What abnormalities do you see in this medical image?</textarea>
+
+            <button id="analyzeBtn"
+                class="mt-5 w-full bg-blue-600 hover:bg-blue-700 py-3 text-lg rounded-lg">
+                🔍 Analyze Image
+            </button>
+
+            <div id="loading" class="hidden text-blue-400 mt-3 text-center">
+                <div class="animate-pulse">⏳ Analyzing with AI models...</div>
+            </div>
+            
+            <div id="error" class="hidden text-red-400 mt-3 p-3 bg-red-900 bg-opacity-20 rounded"></div>
+        </div>
+
+    </div>
+
+    <!-- OUTPUT SECTION: Analysis (left) | Medicine & Remedies (right) -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 px-10 mt-10 pb-10">
+
+        <!-- LEFT: Analysis -->
+        <div class="space-y-6">
+            <h2 class="text-2xl font-bold text-purple-300">📋 Image Analysis</h2>
+            <div class="card p-6">
+                <h3 class="text-lg font-semibold text-green-400">🔬 Analyzer</h3>
+                <p id="llamaScout" class="text-gray-300 mt-2 whitespace-pre-line min-h-[80px]">Waiting for analysis...</p>
+            </div>
+            <div class="card p-6">
+                <h3 class="text-lg font-semibold text-yellow-400">🧘 Exercises</h3>
+                <p id="llamaMaverick" class="text-gray-300 mt-2 whitespace-pre-line min-h-[80px]">Waiting for analysis...</p>
+            </div>
+        </div>
+
+        <!-- RIGHT: Medicine, Home remedies, Where to buy -->
+        <div class="space-y-6">
+            <h2 class="text-2xl font-bold text-purple-300">💊 Recommendations</h2>
+
+            <!-- Medicine recommendation -->
+            <div class="card p-6">
+                <h3 class="text-lg font-semibold text-cyan-400 mb-3">💊 Medicine recommendation</h3>
+                <ul id="medicineList" class="list-disc list-inside text-gray-300 space-y-1 min-h-[60px]">
+                    <li class="text-gray-500">Waiting for analysis...</li>
+                </ul>
+            </div>
+
+            <!-- Home remedies (pointwise) -->
+            <div class="card p-6">
+                <h3 class="text-lg font-semibold text-amber-400 mb-3">🏠 Home remedies</h3>
+                <ul id="homeRemediesList" class="list-disc list-inside text-gray-300 space-y-1 min-h-[60px]">
+                    <li class="text-gray-500">Waiting for analysis...</li>
+                </ul>
+            </div>
+
+            <!-- Where to buy -->
+            <div class="card p-6">
+                <h3 class="text-lg font-semibold text-emerald-400 mb-3">🛒 Where to buy</h3>
+                <p class="text-gray-400 text-sm mb-3">Links open 1mg, PharmEasy, Netmeds</p>
+                <div id="buyLinks" class="space-y-4 min-h-[40px]">
+                    <span class="text-gray-500">Waiting for analysis...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPT -->
+    <script>
+        const API_BASE = `http://${window.location.hostname}:8007`;
+
+        function escapeHtml(str) {
+            if (!str) return "";
+            const div = document.createElement("div");
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Backend status check
+        async function checkBackend() {
+            const el = document.getElementById("backendStatus");
+            const textEl = document.getElementById("backendStatusText");
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 3000);
+            try {
+                const r = await fetch(API_BASE + "/", { method: "GET", signal: ctrl.signal });
+                clearTimeout(t);
+                if (r.ok) {
+                    el.classList.remove("hidden", "bg-red-900/30", "text-red-400");
+                    el.classList.add("bg-green-900/30", "text-green-400");
+                    textEl.textContent = "✓ Backend connected – you can analyze images.";
+                } else {
+                    throw new Error("Not OK");
+                }
+            } catch (e) {
+                clearTimeout(t);
+                el.classList.remove("hidden", "bg-green-900/30", "text-green-400");
+                el.classList.add("bg-red-900/30", "text-red-400");
+                textEl.textContent = "✗ Backend not running. Double-click start.bat to start the app (keep both server windows open).";
+            }
+        }
+        checkBackend();
+        setInterval(checkBackend, 8000);
+
+        // IMAGE PREVIEW
+        document.getElementById("imageInput").onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const preview = document.getElementById("preview");
+            preview.src = URL.createObjectURL(file);
+            preview.classList.remove("hidden");
+        };
+
+        // ANALYZE BUTTON
+        document.getElementById("analyzeBtn").onclick = async () => {
+            const question = document.getElementById("question").value;
+            const imageFile = document.getElementById("imageInput").files[0];
+            const errorDiv = document.getElementById("error");
+            const loadingDiv = document.getElementById("loading");
+
+            // Clear previous error
+            errorDiv.classList.add("hidden");
+
+            if (!imageFile) {
+                errorDiv.textContent = "⚠️ Please upload an image first!";
+                errorDiv.classList.remove("hidden");
+                return;
+            }
+
+            if (!question.trim()) {
+                errorDiv.textContent = "⚠️ Please enter a question!";
+                errorDiv.classList.remove("hidden");
+                return;
+            }
+
+            // Show loading
+            loadingDiv.classList.remove("hidden");
+            document.getElementById("llamaScout").textContent = "Processing...";
+            document.getElementById("llamaMaverick").textContent = "Processing...";
+            document.getElementById("medicineList").innerHTML = "<li class=\"text-gray-500\">Processing...</li>";
+            document.getElementById("homeRemediesList").innerHTML = "<li class=\"text-gray-500\">Processing...</li>";
+            document.getElementById("buyLinks").innerHTML = "<span class=\"text-gray-500\">Processing...</span>";
+
+            // Create form data
+            let formData = new FormData();
+            formData.append("image", imageFile);
+            formData.append("query", question);
+
+            const apiUrl = API_BASE + "/upload_and_query";
+            try {
+                const res = await fetch(apiUrl, {
+                    method: "POST",
+                    body: formData,
+                });
+
+                if (!res.ok) {
+                    throw new Error(`Server error: ${res.status}`);
+                }
+
+                const data = await res.json();
+
+                // Analysis (left)
+                document.getElementById("llamaScout").innerText = data.llama_scout || "No response";
+                document.getElementById("llamaMaverick").innerText = data.llama_maverick || "No response";
+
+                // Medicine list
+                const meds = data.medicines || [];
+                const medEl = document.getElementById("medicineList");
+                if (meds.length === 0) {
+                    medEl.innerHTML = "<li class=\"text-gray-500\">No medicines suggested.</li>";
+                } else {
+                    medEl.innerHTML = meds.map(m => `<li>${escapeHtml(m)}</li>`).join("");
+                }
+
+                // Home remedies (pointwise)
+                const homeRemedies = data.home_remedies || [];
+                const hrEl = document.getElementById("homeRemediesList");
+                if (!Array.isArray(homeRemedies) || homeRemedies.length === 0) {
+                    hrEl.innerHTML = "<li class=\"text-gray-500\">No home remedies suggested.</li>";
+                } else {
+                    hrEl.innerHTML = homeRemedies.map(pt => `<li>${escapeHtml(pt)}</li>`).join("");
+                }
+
+                // Where to buy (links per medicine)
+                const buyLinks = data.buy_links || [];
+                const buyEl = document.getElementById("buyLinks");
+                if (buyLinks.length === 0) {
+                    buyEl.innerHTML = "<span class=\"text-gray-500\">No medicines to link.</span>";
+                } else {
+                    buyEl.innerHTML = buyLinks.map(item => `
+                        <div class="border border-gray-600 rounded-lg p-3">
+                            <p class="font-medium text-gray-200 mb-2">${escapeHtml(item.name)}</p>
+                            <div class="flex flex-wrap gap-2">
+                                <a href="${escapeHtml(item["1mg"])}" target="_blank" rel="noopener" class="inline-block px-3 py-1.5 bg-orange-600 hover:bg-orange-700 rounded text-white text-sm">1mg</a>
+                                <a href="${escapeHtml(item.pharmeasy)}" target="_blank" rel="noopener" class="inline-block px-3 py-1.5 bg-teal-600 hover:bg-teal-700 rounded text-white text-sm">PharmEasy</a>
+                                <a href="${escapeHtml(item.netmeds)}" target="_blank" rel="noopener" class="inline-block px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded text-white text-sm">Netmeds</a>
+                            </div>
+                        </div>
+                    `).join("");
+                }
+
+            } catch (error) {
+                console.error("Error:", error);
+                errorDiv.textContent = `❌ Error: ${error.message}. Make sure the backend is running at ${apiUrl}`;
+                errorDiv.classList.remove("hidden");
+                document.getElementById("llamaScout").textContent = "Error occurred";
+                document.getElementById("llamaMaverick").textContent = "Error occurred";
+                document.getElementById("medicineList").innerHTML = "<li class=\"text-gray-500\">Error occurred</li>";
+                document.getElementById("homeRemediesList").innerHTML = "<li class=\"text-gray-500\">Error occurred</li>";
+                document.getElementById("buyLinks").innerHTML = "<span class=\"text-gray-500\">Error occurred</span>";
+            } finally {
+                loadingDiv.classList.add("hidden");
+            }
+        };
+    </script>
+
+</body>
+</html>
